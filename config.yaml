@@ -1,0 +1,66 @@
+# ============================================================
+# COEQWAL Surface Temperature Pipeline — Configuration
+# ============================================================
+# Edit this file instead of the Python script.
+# To use a different AOI / region, copy this file and
+# run:  python surface_temp_coeqwal_final.py --config other.yaml
+# ============================================================
+
+# --- Input / output paths ---
+aoi_file: "inputs/delta_legal_4326.geojson"
+targets_csv: "inputs/target_dates.csv"
+
+outputs:
+  coverage_csv: "outputs/satellite_coverage_report_pairs.csv"
+  effective_tiles_csv: "inputs/target_dates_effective_tiles.csv"
+  tifs_dir: "outputs/mosaicos_odc_lst_delta"
+  zip_file: "outputs/mosaicos/mosaicos_celsius_odc_delta.zip"
+  summary_csv: "outputs/mosaicos_odc_lst_delta/run_summary_pairs.csv"
+  dayflow_csv: "outputs/dayflow_1929_present.csv"
+  wyt_csv: "outputs/water_year_type.csv"
+  dayflow_wyt_csv: "outputs/dayflow_wyt_daily.csv"
+
+# --- Spatial settings ---
+output_crs: "EPSG:32610"
+resolution: [-30, 30]
+
+# --- WRS tile selection ---
+wrs_path: 44
+wrs_rows: [33, 34]
+
+# --- Temporal search ---
+search_window_days: 16
+
+# --- Cloud cover filter (two-stage, set either to null to disable) ---
+# Stage 1 (fast): metadata cloud cover for the FULL scene.
+#   Used to quickly discard obviously cloudy scenes without downloading pixels.
+#   Set generous (e.g. 50) so you don't accidentally reject scenes
+#   that are cloudy far from your AOI.
+cloud_cover_max: 70
+
+# Stage 2 (precise): actual cloud fraction computed INSIDE your AOI only.
+#   Requires downloading QA_PIXEL per candidate — slower but accurate.
+#   Value is a percentage (e.g. 10 = max 10% clouds over your Delta).
+#   Set to null to skip this check.
+cloud_cover_aoi_max: 10
+
+# --- QA masking behavior ---
+use_clear: false
+water_only: true
+use_radsat_mask: true
+
+# --- Sensor tiebreaker preference (lower index = preferred) ---
+sensor_preference:
+  - landsat9
+  - landsat8
+  - landsat7
+  - landsat5
+  - landsat4
+
+# --- Output nodata value ---
+nodata_out: -9999.0
+
+# --- AWS settings ---
+aws:
+  request_payer: "requester"
+  default_region: "us-west-2"

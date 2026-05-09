@@ -1,0 +1,155 @@
+# ============================================================
+#  COEQWAL — Turbidity Pipeline  |  config_turbidity.yaml
+#  Parallel to config.yaml (LST pipeline)
+# ============================================================
+
+# ── Inputs ───────────────────────────────────────────────────
+aoi_file:    inputs/delta_legal_4326.geojson
+targets_csv: inputs/target_dates.csv
+
+# ── Outputs ──────────────────────────────────────────────────
+outputs:
+  tifs_dir:          outputs/mosaicos_odc_turbidity
+  coverage_csv:      outputs/satellite_coverage_report_turbidity.csv
+  effective_csv:     outputs/target_dates_effective_turbidity.csv
+  run_summary_csv:   outputs/mosaicos_odc_turbidity/run_summary_turbidity.csv
+  zip_file:          outputs/turbidity_tifs.zip
+
+# ── Spatial ──────────────────────────────────────────────────
+output_crs: "EPSG:32610"
+
+# Sentinel-2 at 20 m (matches the Rrs/NIR bands native resolution)
+# Landsat    at 30 m — set sentinel_resolution and landsat_resolution
+# separately so the mosaicker can harmonise them.
+sentinel_resolution: [-20, 20]
+landsat_resolution:  [-30, 30]
+
+# MGRS tiles that cover the Sacramento-San Joaquin Delta
+# These are used to filter Sentinel-2 scenes after dc.find_datasets
+mgrs_tiles: ["10SEH", "10SFH", "10SEG", "10SFG"]
+
+# WRS-2 path/rows for Landsat (same as LST pipeline)
+wrs_path: 44
+wrs_rows:  [33, 34]
+
+# ── Scene search ─────────────────────────────────────────────
+search_window_days: 16   # ±16 days around each target date
+cloud_cover_max:    10   # scenes above this % are rejected outright
+                         # set to null to disable
+
+# Sensor families — processed independently per target date.
+# The pipeline picks the best scene within each family and outputs
+# up to two TIFs per date (one Landsat + one Sentinel-2).
+# Within a family, earlier entries are preferred (lower index = higher priority).
+sensor_families:
+  landsat:
+    preference: ["landsat9", "landsat8"]   # L9 before L8
+    requires_wrs_rows: true                # needs both rows 33 + 34
+  sentinel2:
+    preference: ["s2c", "s2b", "s2a"]     # newest instrument first
+    requires_all_mgrs: true               # needs all 4 MGRS tiles
+
+# ── Products ─────────────────────────────────────────────────
+# All ACOLITE aquatic-reflectance products available in this ODC.
+# The pipeline will check which ones are actually indexed.
+products:
+  - landsat8_c2_acolite_ar_c4
+  - landsat9_c2_acolite_ar_c4
+  - s2a_acolite_ar_c4
+  - s2b_acolite_ar_c4
+  - s2c_acolite_ar_c4
+
+# ── Band map (verified from ODC measurement inspector) ───────
+# For each product: red, nir, swir1, flags
+# red  → Dogliotti low-turbidity arm  (~655–667 nm)
+# nir  → Dogliotti high-turbidity arm (~864–866 nm)
+# swir → land/water mask (water: Rrs_swir <= land_swir_threshold)
+# flags→ ACOLITE l2_flags bitmask
+band_map:
+  landsat8_c2_acolite_ar_c4:
+    red:   L2W_Rrs_655
+    nir:   L2W_Rrs_865
+    swir1: L2W_Rrs_1609
+    flags: L2W_l2_flags
+
+  landsat9_c2_acolite_ar_c4:
+    red:   L2W_Rrs_654
+    nir:   L2W_Rrs_865
+    swir1: L2W_Rrs_1608
+    flags: L2W_l2_flags
+
+  s2a_acolite_ar_c4:
+    red:   L2W_Rrs_665
+    nir:   L2W_Rrs_865
+    swir1: L2W_Rrs_1614
+    flags: L2W_l2_flags
+
+  s2b_acolite_ar_c4:
+    red:   L2W_Rrs_665
+    nir:   L2W_Rrs_864
+    swir1: L2W_Rrs_1610
+    flags: L2W_l2_flags
+
+  s2c_acolite_ar_c4:
+    red:   L2W_Rrs_667
+    nir:   L2W_Rrs_866
+    swir1: L2W_Rrs_1612
+    flags: L2W_l2_flags
+
+# ── Radiometric scaling (integer → Rrs) ──────────────────────
+# Applied to all uint16 Rrs bands before any calculation.
+# Rrs = raw * scale + offset
+# raw == nodata_raw  →  NaN  (applied before scale)
+scaling:
+  scale:      0.00001     # 1e-5
+  offset:    -0.15534
+  nodata_raw: 65535       # uint16 sentinel for all Rrs bands
+  flags_nodata: 16        # uint8  sentinel for l2_flags
+
+# ── Masking ──────────────────────────────────────────────────
+# 1) SWIR land/water separation
+land_swir_threshold: 0.009999   # Rrs_swir1 > this  →  land (masked out)
+
+# 2) ACOLITE l2_flags bitmask
+#    bits 3 (=8) and 4 (=16) mark invalid water pixels
+#    pixel is valid when  (flags & flags_invalid_bits) == 0
+flags_invalid_bits: 24          # 8 | 16
+
+# 3) Physical range filter on Rrs (applied after scaling)
+#    Values outside [rrs_min, rrs_max] are set to NaN
+rrs_min: -0.01
+rrs_max:  1.0
+
+
+# 4) Minimum valid pixels per tile (after masking + AOI clip)
+#    Tiles below this threshold are considered mostly cloudy and
+#    are rejected.  If any tile in a scene fails this check, the
+#    whole scene is written but flagged as "written_incomplete".
+#    Set to 0 to disable.
+#
+#    Reference: the bad Landsat tile in 2021-05-31 had 1051 px,
+#    the good one had 36550 px.  5000 is a safe conservative floor.
+min_valid_pixels_per_tile: 50
+
+# ── Dogliotti turbidity algorithm ────────────────────────────
+dogliotti:
+  # Red arm  (low–moderate turbidity)
+  a_red:  228.1
+  c_red:  0.1641
+  # NIR arm  (high turbidity)
+  a_nir:  3078.9
+  c_nir:  0.2112
+  # Switching thresholds on rho_red (= pi * Rrs_red)
+  switch_low:  0.05
+  switch_high: 0.07
+  # Cap: results above this are physically implausible → NaN
+  turb_max_ftu: 1000.0
+
+# ── Output raster ─────────────────────────────────────────────
+nodata_out: -9999.0     # written as nodata in output TIF
+compress:   LZW
+
+# ── AWS / GDAL environment ───────────────────────────────────
+aws:
+  request_payer:  requester
+  default_region: us-west-2
