@@ -1,41 +1,35 @@
-# Coeqwal – Delta Surface Temperature Pipeline (Landsat C2 L2, S3-only)
+# COEQWAL — Delta Water Quality Pipelines
 
-This repository contains the working pipeline used to:
-1) build a daily Dayflow + Water-Year-Type (WYT) table,
-2) select target dates by NDOI/WYT criteria,
-3) discover Landsat Collection 2 Level-2 scenes directly from the USGS `usgs-landsat` S3 bucket (Requester Pays),
-4) generate per-date surface temperature mosaics (Celsius) clipped to the legal Delta AOI.
+Satellite-based pipelines for retrieving water quality variables over the California Legal Delta, developed in support of the [COEQWAL project](https://coeqwal.org) (Collaboratory for Equity in Water Allocations).
 
-## Status
-Work-in-progress. Next steps include expanded documentation, dependency pinning, and packaging.
+---
 
-## Repository contents
-- `surface_temp_coeqwal_final.ipynb` — end-to-end pipeline notebook (recommended entry point)
-- `surface_temp_coeqwal_final.py` — script export of the notebook (same logic, easier to review)
-- `utils_s3_rasterio.py` — shared S3 + Rasterio/GDAL helper functions
-- `.gitignore` — excludes `inputs/`, `outputs/`, rasters, and other artifacts from version control
+## Pipelines
 
-## Data & privacy
-This repository does **not** commit `inputs/`, `outputs/`, intermediate rasters, or other generated products. Those remain on the server environment.
+### 1. Land Surface Temperature — `coeqwal_delta_surface_temp_pipeline.ipynb`
+Retrieves Land Surface Temperature (LST) over the Legal Delta from Landsat 4/5/7/8/9 imagery via Open Data Cube (ODC). Target dates are selected based on hydrological conditions — specifically Net Delta Outflow Index (NDOI) from Dayflow and Water Year Type (Wet, Above Normal, Below Normal, Dry, Critical) for the Sacramento and San Joaquin valleys. Output is one cloud-masked, mosaicked GeoTIFF per target date in degrees Celsius (UTM Zone 10, 30 m resolution).
 
-## Run order (chunks)
-1) Dayflow merge (1929–2024) → `outputs/dayflow_1929_2024.csv`
-2) WYT download + daily join → `outputs/dayflow_wyt_daily.csv`
-3) Interactive filter → `inputs/target_dates.csv`
-4) S3-only Landsat scene catalog → `outputs/scene_catalog_s3only.csv`
-5) Mosaics (Celsius, clipped to AOI) → `outputs/mosaicos/*.zip`
+### 2. Water Turbidity — `delta_turbidity_landsat_sentinel2_pipeline.ipynb`
+Retrieves water turbidity over the Legal Delta from Landsat 8/9 and Sentinel-2 A/B/C imagery using the Dogliotti et al. (2015) switching model applied to ACOLITE Aquatic Reflectance C4 products. Output is one GeoTIFF per target date in Formazin Turbidity Units (FTU, float32).
 
-## How to run (server workflow)
-This workflow is designed to run in the EASI/CSIRO Jupyter environment where AWS access is already configured.
+---
 
-1) Open `surface_temp_coeqwal_final.ipynb`
-2) Run chunks in order (1 → 7)
-3) Outputs are written to local `outputs/` and are not committed to GitHub
+## Configuration
+
+Each pipeline reads from a YAML config file:
+- `config.yaml` — LST pipeline settings (AOI, resolution, WRS tiles, cloud cover, sensor preference)
+- `config_turbidity.yaml` — Turbidity pipeline settings (MGRS tiles, Dogliotti parameters, masking thresholds)
+
+To use a custom config: `python pipeline.py --config other_config.yaml`
+
+---
 
 ## Requirements
-Python packages used include: `boto3`, `numpy`, `pandas`, `rasterio`, `shapely`, `requests` 
 
-## AWS / S3 access notes
-- Bucket: `usgs-landsat` (**Requester Pays**)
-- Region expected: `us-west-2`
-- Credentials must be available in the runtime environment (server-side)
+Both pipelines run on the CSIRO Open Data Cube (ODC) JupyterHub environment. Dependencies include: `datacube`, `geopandas`, `xarray`, `rioxarray`, `rasterio`, `numpy`, `pandas`, `pyyaml`.
+
+---
+
+## Project Context
+
+COEQWAL is a $9.1M UC-led project exploring equitable water allocation in California under climate change. These pipelines support the salmon recovery and drinking water use cases by providing reproducible, condition-linked water quality observations over the Sacramento-San Joaquin Delta.
